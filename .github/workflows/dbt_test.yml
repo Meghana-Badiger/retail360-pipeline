@@ -1,0 +1,136 @@
+name: dbt Tests
+
+# Trigger: run this workflow every time code is pushed to main
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  dbt-test:
+    name: Run dbt Tests
+    runs-on: ubuntu-latest  # GitHub provides a free Linux machine
+
+    services:
+      # Spin up a Postgres database for testing
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: retail
+          POSTGRES_PASSWORD: retail123
+          POSTGRES_DB: retail_dw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # Step 1 — Check out your code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Step 2 — Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      # Step 3 — Install dependencies
+      - name: Install dependencies
+        run: |
+          pip install dbt-postgres==1.5.0 setuptools
+          pip install pandas psycopg2-binary faker
+
+      # Step 4 — Set up database schemas
+      - name: Set up database schemas
+        run: |
+          PGPASSWORD=retail123 psql -h localhost -U retail -d retail_dw -c "
+            CREATE SCHEMA IF NOT EXISTS bronze;
+            CREATE SCHEMA IF NOT EXISTS silver;
+            CREATE SCHEMA IF NOT EXISTS gold;
+            CREATE TABLE IF NOT EXISTS bronze.raw_orders (
+              order_id VARCHAR(50), customer_id VARCHAR(50),
+              product_id VARCHAR(50), quantity INT,
+              unit_price NUMERIC(10,2), order_date TIMESTAMP,
+              status VARCHAR(20), ingested_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS bronze.raw_customers (
+              customer_id VARCHAR(50), name VARCHAR(100),
+              email VARCHAR(100), city VARCHAR(100),
+              country VARCHAR(100), signup_date DATE,
+              ingested_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS bronze.raw_products (
+              product_id VARCHAR(50), product_name VARCHAR(200),
+              category VARCHAR(100), cost_price NUMERIC(10,2),
+              sell_price NUMERIC(10,2), ingested_at TIMESTAMP DEFAULT NOW()
+            );
+            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA bronze TO retail;
+            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA silver TO retail;
+            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA gold TO retail;
+          "
+
+      # Step 5 — Generate and load test data
+      - name: Generate and load test data
+        run: |
+          python ingestion/generate_data.py
+          python -c "
+          import pandas as pd
+          import psycopg2
+          from psycopg2.extras import execute_values
+
+          conn = psycopg2.connect(host='localhost', port=5432, dbname='retail_dw', user='retail', password='retail123')
+          cur = conn.cursor()
+
+          df = pd.read_csv('data/orders.csv')
+          df['ingested_at'] = pd.Timestamp.now()
+          execute_values(cur, 'INSERT INTO bronze.raw_orders VALUES %s', df.values.tolist())
+
+          df = pd.read_csv('data/customers.csv')
+          df['ingested_at'] = pd.Timestamp.now()
+          execute_values(cur, 'INSERT INTO bronze.raw_customers VALUES %s', df.values.tolist())
+
+          df = pd.read_csv('data/products.csv')
+          df['ingested_at'] = pd.Timestamp.now()
+          execute_values(cur, 'INSERT INTO bronze.raw_products VALUES %s', df.values.tolist())
+
+          conn.commit()
+          cur.close()
+          conn.close()
+          print('Test data loaded!')
+          "
+
+      # Step 6 — Create dbt profiles.yml
+      - name: Create dbt profiles
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml << EOF
+          retail360:
+            target: dev
+            outputs:
+              dev:
+                type: postgres
+                host: localhost
+                port: 5432
+                user: retail
+                password: retail123
+                dbname: retail_dw
+                schema: silver
+                threads: 4
+          EOF
+
+      # Step 7 — Run dbt models
+      - name: Run dbt models
+        working-directory: dbt_project/retail360
+        run: dbt run
+
+      # Step 8 — Run dbt tests
+      - name: Run dbt tests
+        working-directory: dbt_project/retail360
+        run: dbt test
