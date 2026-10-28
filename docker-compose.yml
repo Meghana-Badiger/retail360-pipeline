@@ -1,6 +1,4 @@
-version: '3.8'
-
-services:
+services:                                       # 'version' line removed — obsolete, caused the WARN
 
   postgres:
     image: postgres:15
@@ -20,7 +18,7 @@ services:
       retries: 5
 
   airflow-init:
-    image: apache/airflow:2.8.1
+    image: apache/airflow:2.8.1                 # Plain image is enough — only sets up DB + admin user
     container_name: retail360_airflow_init
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -32,17 +30,20 @@ services:
     restart: on-failure
 
   airflow-webserver:
-    image: apache/airflow:2.8.1
+    build: .                                    # NEW: build image from ./Dockerfile
+    image: retail360-airflow:2.8.1              # NEW: name of the built image
     container_name: retail360_airflow_webserver
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://retail:retail123@postgres/retail_dw
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      PG_HOST: postgres                         # NEW: spark_ingest.py connects to Postgres by service name
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./ingestion:/opt/airflow/ingestion
+      - ./data:/opt/airflow/data
     ports:
       - "8080:8080"
     depends_on:
@@ -52,17 +53,20 @@ services:
     restart: always
 
   airflow-scheduler:
-    image: apache/airflow:2.8.1
+    build: .                                    # NEW: same image as webserver
+    image: retail360-airflow:2.8.1              # NEW
     container_name: retail360_airflow_scheduler
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://retail:retail123@postgres/retail_dw
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      PG_HOST: postgres                         # NEW: needed here — the scheduler runs the tasks
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./ingestion:/opt/airflow/ingestion
+      - ./data:/opt/airflow/data
     depends_on:
       postgres:
         condition: service_healthy
