@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: gold_revenue_by_category
+    description: "Total revenue aggregated by product category"
+    columns:
+      - name: product_category
+        description: "Product category name"
+        tests:
+          - not_null
+          - unique
+
+      - name: total_revenue
+        description: "Sum of revenue for this category"
+        tests:
+          - not_null
+
+  - name: gold_customer_summary
+    description: "Customer purchase behaviour summary"
+    columns:
+      - name: customer_id
+        description: "Unique customer identifier"
+        tests:
+          - not_null
+          - unique
+
+      - name: total_spent
+        description: "Total amount spent by customer"
+        tests:
+          - not_null

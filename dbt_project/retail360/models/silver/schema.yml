@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: silver_orders
+    description: "Cleaned orders joined with customer and product data"
+    columns:
+      - name: order_id
+        description: "Unique order identifier"
+        tests:
+          - not_null
+          - unique
+
+      - name: customer_id
+        description: "Foreign key to customers"
+        tests:
+          - not_null
+
+      - name: product_id
+        description: "Foreign key to products"
+        tests:
+          - not_null
+
+      - name: revenue
+        description: "Revenue = quantity * unit_price"
+        tests:
+          - not_null
+
+      - name: status
+        description: "Order status"
+        tests:
+          - accepted_values:
+              values: ['completed', 'pending']
+
+  - name: silver_customers
+    description: "Cleaned customer data"
+    columns:
+      - name: customer_id
+        description: "Unique customer identifier"
+        tests:
+          - not_null
+          - unique
+
+      - name: customer_email
+        description: "Customer email"
+        tests:
+          - not_null
+
+  - name: silver_products
+    description: "Cleaned product data"
+    columns:
+      - name: product_id
+        description: "Unique product identifier"
+        tests:
+          - not_null
+          - unique
+
+      - name: category
+        description: "Product category"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Electronics', 'Clothing', 'Home & Garden', 'Sports', 'Books', 'Toys']
