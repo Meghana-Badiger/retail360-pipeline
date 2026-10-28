@@ -88,5 +88,16 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
+  superset:
+    image: apache/superset:3.0.0
+    container_name: retail360_superset
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: "retail360supersetsecretkey"
+    depends_on:
+      - postgres
+    restart: always
+
 volumes:
   postgres_data:
