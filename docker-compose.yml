@@ -2,7 +2,6 @@ version: '3.8'
 
 services:
 
-  # ── PostgreSQL (Data Warehouse) ──────────────────────────
   postgres:
     image: postgres:15
     container_name: retail360_postgres
@@ -20,10 +19,21 @@ services:
       interval: 10s
       retries: 5
 
-  # ── Airflow ───────────────────────────────────────────────
-  airflow:
+  airflow-init:
     image: apache/airflow:2.8.1
-    container_name: retail360_airflow
+    container_name: retail360_airflow_init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://retail:retail123@postgres/retail_dw
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: bash -c "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com"
+    restart: on-failure
+
+  airflow-webserver:
+    image: apache/airflow:2.8.1
+    container_name: retail360_airflow_webserver
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://retail:retail123@postgres/retail_dw
@@ -38,14 +48,27 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      bash -c "airflow db migrate &&
-               airflow users create --username admin --password admin
-               --firstname Admin --lastname User
-               --role Admin --email admin@example.com &&
-               airflow webserver & airflow scheduler"
+    command: webserver
+    restart: always
 
-  # ── Kafka ─────────────────────────────────────────────────
+  airflow-scheduler:
+    image: apache/airflow:2.8.1
+    container_name: retail360_airflow_scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://retail:retail123@postgres/retail_dw
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./ingestion:/opt/airflow/ingestion
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: scheduler
+    restart: always
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: retail360_zookeeper
